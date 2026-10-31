@@ -10,13 +10,9 @@ app.use(express.json());
 
 const ytDlpPath = path.join(__dirname, 'yt-dlp');
 
-// Descargar yt-dlp si no existe al arrancar el servidor
+// Descargar yt-dlp si no existe al arrancar
 if (!fs.existsSync(ytDlpPath)) {
-  console.log('Descargando binario oficial de yt-dlp...');
-  exec(`curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o ${ytDlpPath} && chmod a+rx ${ytDlpPath}`, (err) => {
-    if (err) console.error('Error al descargar yt-dlp:', err);
-    else console.log('yt-dlp listo para usar.');
-  });
+  exec(`curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o ${ytDlpPath} && chmod a+rx ${ytDlpPath}`);
 }
 
 app.post('/api/convert', (req, res) => {
@@ -26,27 +22,26 @@ app.post('/api/convert', (req, res) => {
     return res.status(400).json({ error: 'Ingresa un enlace de YouTube válido.' });
   }
 
-  const qualityCmd = format === 'mp3' 
-    ? '-f "bestaudio/best"' 
-    : '-f "best[ext=mp4]/best"';
+  const outputFileName = `media_${Date.now()}.${format === 'mp3' ? 'mp3' : 'mp4'}`;
+  const outputPath = path.join(__dirname, outputFileName);
 
-  const command = `${ytDlpPath} ${qualityCmd} -g "${videoUrl}"`;
+  const flags = format === 'mp3'
+    ? `-x --audio-format mp3 -o "${outputPath}"`
+    : `-f "best[ext=mp4]/best" -o "${outputPath}"`;
 
-  exec(command, { timeout: 35000 }, (error, stdout, stderr) => {
-    if (error) {
-      console.error('Error procesando enlace:', stderr || error);
+  const command = `${ytDlpPath} ${flags} "${videoUrl}"`;
+
+  exec(command, { timeout: 120000 }, (error) => {
+    if (error || !fs.existsSync(outputPath)) {
+      console.error('Error en descarga:', error);
       return res.status(500).json({ error: 'No se pudo procesar el video de YouTube.' });
     }
 
-    const downloadUrl = stdout.trim().split('\n')[0];
-    if (!downloadUrl) {
-      return res.status(500).json({ error: 'No se pudo obtener el enlace de descarga.' });
-    }
-
-    return res.json({
-      success: true,
-      downloadUrl: downloadUrl,
-      format: format
+    res.download(outputPath, outputFileName, (err) => {
+      // Eliminar el archivo del servidor después de enviarlo para ahorrar espacio
+      if (fs.existsSync(outputPath)) {
+        fs.unlinkSync(outputPath);
+      }
     });
   });
 });
