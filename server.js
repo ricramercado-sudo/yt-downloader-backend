@@ -1,26 +1,44 @@
 const express = require('express');
 const cors = require('cors');
-const ytdlp = require('yt-dlp-exec');
+const { exec } = require('child_process');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.post('/api/convert', async (req, res) => {
+const ytDlpPath = path.join(__dirname, 'yt-dlp');
+
+// Descargar yt-dlp si no existe al arrancar el servidor
+if (!fs.existsSync(ytDlpPath)) {
+  console.log('Descargando binario oficial de yt-dlp...');
+  exec(`curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o ${ytDlpPath} && chmod a+rx ${ytDlpPath}`, (err) => {
+    if (err) console.error('Error al descargar yt-dlp:', err);
+    else console.log('yt-dlp listo para usar.');
+  });
+}
+
+app.post('/api/convert', (req, res) => {
   const { videoUrl, format } = req.body;
 
   if (!videoUrl) {
     return res.status(400).json({ error: 'Ingresa un enlace de YouTube válido.' });
   }
 
-  try {
-    const flags = format === 'mp3' 
-      ? { getUrl: true, extractAudio: true, audioFormat: 'mp3', f: 'bestaudio/best' }
-      : { getUrl: true, f: 'best[ext=mp4]/best' };
+  const qualityCmd = format === 'mp3' 
+    ? '-f "bestaudio/best"' 
+    : '-f "best[ext=mp4]/best"';
 
-    const output = await ytdlp(videoUrl, flags);
-    const downloadUrl = output.trim().split('\n')[0];
+  const command = `${ytDlpPath} ${qualityCmd} -g "${videoUrl}"`;
 
+  exec(command, { timeout: 35000 }, (error, stdout, stderr) => {
+    if (error) {
+      console.error('Error procesando enlace:', stderr || error);
+      return res.status(500).json({ error: 'No se pudo procesar el video de YouTube.' });
+    }
+
+    const downloadUrl = stdout.trim().split('\n')[0];
     if (!downloadUrl) {
       return res.status(500).json({ error: 'No se pudo obtener el enlace de descarga.' });
     }
@@ -30,11 +48,7 @@ app.post('/api/convert', async (req, res) => {
       downloadUrl: downloadUrl,
       format: format
     });
-
-  } catch (error) {
-    console.error('Error en yt-dlp:', error);
-    return res.status(500).json({ error: 'No se pudo procesar el video de YouTube. Intenta de nuevo.' });
-  }
+  });
 });
 
 const PORT = process.env.PORT || 3000;
