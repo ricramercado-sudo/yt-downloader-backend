@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 
 const app = express();
-app.use(cors());
+app.use(cors({ origin: '*' }));
 app.use(express.json());
 
 const ytDlpPath = path.join(__dirname, 'yt-dlp');
@@ -14,6 +14,11 @@ const ytDlpPath = path.join(__dirname, 'yt-dlp');
 if (!fs.existsSync(ytDlpPath)) {
   exec(`curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o ${ytDlpPath} && chmod a+rx ${ytDlpPath}`);
 }
+
+// Ruta principal para que no salga "Cannot GET /"
+app.get('/', (req, res) => {
+  res.send('API de YouTube Downloader activa y funcionando correctamente.');
+});
 
 app.post('/api/convert', (req, res) => {
   const { videoUrl, format } = req.body;
@@ -38,7 +43,6 @@ app.post('/api/convert', (req, res) => {
     }
 
     res.download(outputPath, outputFileName, (err) => {
-      // Eliminar el archivo del servidor después de enviarlo para ahorrar espacio
       if (fs.existsSync(outputPath)) {
         fs.unlinkSync(outputPath);
       }
